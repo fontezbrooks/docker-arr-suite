@@ -6,18 +6,22 @@ services:
     container_name: jellyfin
     restart: always
     user: 1000:1000
-    # Network mode of 'host' exposes the ports on the host. This is needed for DLNA access.
-    # network_mode: 'host'
+    # Bound to localhost only. For LAN access, change to "8096:8096".
+    # For remote private access, prefer a VPN/Tailscale/Cloudflare Tunnel later.
+    ports:
+      - 127.0.0.1:8096:8096
     volumes:
       - jellyfin:/config
       - cache:/cache
       - media:/media
     env_file: ./env/jellyfin.env
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.jellyfin.rule=Host(`jellyfin.${DOMAIN}`)
-      - traefik.http.routers.jellyfin.entrypoints=websecure
-      - traefik.http.services.jellyfin.loadbalancer.server.port=8096
+      - traefik.enable=false
+    healthcheck:
+      test: curl -f http://localhost:8096/health || exit 1
+      interval: 10s
+      timeout: 3s
+      start_period: 60s
     depends_on:
       traefik:
         condition: service_healthy
@@ -35,6 +39,11 @@ services:
       - traefik.http.routers.jellyseerr.rule=Host(`jellyseerr.${DOMAIN}`)
       - traefik.http.routers.jellyseerr.entrypoints=websecure
       - traefik.http.services.jellyseerr.loadbalancer.server.port=5055
+    healthcheck:
+      test: wget http://localhost:5055/api/v1/status -qO /dev/null || exit 1
+      interval: 10s
+      timeout: 3s
+      start_period: 60s
     depends_on:
       traefik:
         condition: service_healthy
@@ -50,30 +59,30 @@ networks:
     attachable: true
 
 volumes:
-  media: # Media library
+  media: # Media library.
     driver: local
     driver_opts:
-      type: "nfs"
-      o: "addr=${NFS_SERVER},rw,tcp,nolock,hard,wsize=65536,rsize=65536"
-      device: ":${NFS_VOLUME}/data/media"
+      type: none
+      o: bind
+      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/data/media
 
   jellyseerr: # Jellyseerr app data.
     driver: local
     driver_opts:
-      type: "nfs"
-      o: "addr=${NFS_SERVER},rw,tcp,nolock,hard,wsize=65536,rsize=65536"
-      device: ":${NFS_VOLUME}/docker_data/jellyseerr"
+      type: none
+      o: bind
+      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/config/jellyseerr
 
   jellyfin: # Jellyfin app data.
     driver: local
     driver_opts:
-      type: "nfs"
-      o: "addr=${NFS_SERVER},rw,tcp,nolock,hard,wsize=65536,rsize=65536"
-      device: ":${NFS_VOLUME}/docker_data/jellyfin"
+      type: none
+      o: bind
+      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/config/jellyfin
 
   cache: # Jellyfin cache data.
     driver: local
     driver_opts:
-      type: "nfs"
-      o: "addr=${NFS_SERVER},rw,tcp,nolock,hard,wsize=65536,rsize=65536"
-      device: ":${NFS_VOLUME}/docker_data/jellyfin_cache"
+      type: none
+      o: bind
+      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/config/jellyfin-cache

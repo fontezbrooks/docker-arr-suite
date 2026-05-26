@@ -1,0 +1,15 @@
+# Local Docker/Compose configuration
+.env
+env/*.env
+!env/*.env.example
+
+# Secret material
+secrets/*.secret
+!secrets/*.secret.example
+
+# Local/generated files
+node_modules/
+package.json
+package-lock.json
+.pi/
+.DS_Store

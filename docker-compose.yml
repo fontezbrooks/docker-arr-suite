@@ -16,24 +16,24 @@ services:
     container_name: traefik
     restart: always
     command:
-      - --log.level=DEBUG
+      - --log.level=INFO
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
       - --api.dashboard=false
       - --serversTransport.insecureSkipVerify=true
-      # Set up LetsEncrypt certificate resolver
+      # Set up LetsEncrypt certificate resolver with Cloudflare DNS challenge.
       - --certificatesresolvers.letsencrypt.acme.dnschallenge=true
       - --certificatesresolvers.letsencrypt.acme.dnschallenge.provider=cloudflare
       - --certificatesResolvers.letsencrypt.acme.dnschallenge.resolvers=1.1.1.1:53,1.0.0.1:53
       - --certificatesResolvers.letsencrypt.acme.dnschallenge.delayBeforeCheck=20
       - --certificatesresolvers.letsencrypt.acme.email=${EMAIL_ADDRESS}
       - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
-      # Set up an insecure listener that redirects all traffic to TLS
+      # HTTP -> HTTPS redirect.
       - --entrypoints.web.address=:80
       - --entrypoints.websecure.address=:443
       - --entrypoints.web.http.redirections.entrypoint.to=websecure
       - --entrypoints.web.http.redirections.entrypoint.scheme=https
-      # Set up the TLS configuration for our websecure listener
+      # TLS configuration for the public websecure listener.
       - --entrypoints.websecure.http.tls=true
       - --entrypoints.websecure.http.tls.certResolver=letsencrypt
       - --entrypoints.websecure.http.tls.domains[0].main=${DOMAIN}
@@ -56,6 +56,9 @@ services:
 
   gluetun:
     # See more: https://github.com/qdm12/gluetun-wiki
+    # This stack uses Linux containers. On Windows Server, run Docker with a
+    # Linux backend such as WSL2 or a Linux VM; native Windows containers will
+    # not run these images.
     image: qmcgaw/gluetun
     container_name: gluetun
     restart: always
@@ -67,6 +70,14 @@ services:
       - openvpn_user
       - openvpn_password
     env_file: ./env/gluetun.env
+    # Admin apps that share Gluetun's network namespace are bound to localhost
+    # only. Use SSH tunneling, a private VPN, or change these bindings if you
+    # later want LAN access.
+    ports:
+      - 127.0.0.1:8088:8088 # qBittorrent
+      - 127.0.0.1:8989:8989 # Sonarr
+      - 127.0.0.1:7878:7878 # Radarr
+      - 127.0.0.1:9696:9696 # Prowlarr
     volumes:
       - gluetun:/gluetun
 
@@ -81,8 +92,9 @@ services:
 include:
   - bittorrent-compose.yml
   - arr-compose.yml
-#  - plex-compose.yml
-#  - jellyfin-compose.yml
+  # Plex is intentionally disabled for this fork.
+  # - plex-compose.yml
+  - jellyfin-compose.yml
 
 networks:
   default:
@@ -94,13 +106,13 @@ volumes:
   letsencrypt: # Traefik Lets Encrypt certs.
     driver: local
     driver_opts:
-      type: "nfs"
-      o: "addr=${NFS_SERVER},rw,tcp,nolock,hard,wsize=65536,rsize=65536"
-      device: ":${NFS_VOLUME}/docker_data/letsencrypt"
+      type: none
+      o: bind
+      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/config/traefik/letsencrypt
 
   gluetun: # Gluetun app data.
     driver: local
     driver_opts:
-      type: "nfs"
-      o: "addr=${NFS_SERVER},rw,tcp,nolock,hard,wsize=65536,rsize=65536"
-      device: ":${NFS_VOLUME}/docker_data/gluetun"
+      type: none
+      o: bind
+      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/config/gluetun

@@ -23,20 +23,15 @@ services:
       timeout: 3s
       start_period: 60s
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.bittorrent.rule=Host(`bittorrent.${DOMAIN}`)
-      - traefik.http.routers.bittorrent.entrypoints=websecure
-      - traefik.http.services.bittorrent.loadbalancer.server.port=8088
+      - traefik.enable=false
     depends_on:
       gluetun:
-        condition: service_healthy
-        restart: true
-      traefik:
         condition: service_healthy
         restart: true
 
   bittorrent_port_forwarder:
     # See more: https://github.com/mjmeli/qbittorrent-port-forward-gluetun-server
+    # Configure only after choosing a VPN provider that supports port forwarding.
     image: mjmeli/qbittorrent-port-forward-gluetun-server
     container_name: bittorrent_port_forwarder
     restart: always
@@ -56,16 +51,16 @@ networks:
     attachable: true
 
 volumes:
-  torrent: # torrent data mount
+  torrent: # Torrent downloads.
     driver: local
     driver_opts:
-      type: "nfs"
-      o: "addr=${NFS_SERVER},rw,tcp,nolock,hard,wsize=65536,rsize=65536"
-      device: ":${NFS_VOLUME}/data/torrents"
+      type: none
+      o: bind
+      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/data/torrents
 
   bittorrent: # qBittorrent app data.
     driver: local
     driver_opts:
-      type: "nfs"
-      o: "addr=${NFS_SERVER},rw,tcp,nolock,hard,wsize=65536,rsize=65536"
-      device: ":${NFS_VOLUME}/docker_data/bittorrent"
+      type: none
+      o: bind
+      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/config/qbittorrent
