@@ -4,24 +4,18 @@ Docker Compose stack for a private media server with remote media requests.
 
 This fork is configured for:
 
-- **Jellyfin** as the media server.
-- **Jellyseerr** as the only public web app, at `https://jellyseerr.${DOMAIN}`.
-- **qBittorrent + Sonarr + Radarr + Prowlarr + Unpackerr** for media automation.
+- **Jellyfin for Windows** as the media server, installed with the official standalone `.exe` installer.
+- **Jellyseerr** in Docker as the only public web app, at `https://jellyseerr.${DOMAIN}`.
+- **qBittorrent + Sonarr + Radarr + Prowlarr + Unpackerr** in Docker for media automation.
 - **Gluetun** as the VPN gateway for torrent/*arr traffic.
 - **Traefik + Cloudflare DNS challenge** for public HTTPS.
-- Local storage under `/srv/media-stack` instead of NFS.
+- A Windows shared storage root such as `D:\MediaStack` / `D:/MediaStack` instead of NFS.
 
 ## Important platform note
 
-Windows Server is the preferred target for this fork, but this stack uses **Linux container images**. It will not run as native Windows containers.
+Windows Server is the preferred target for this fork. Jellyfin itself should be installed directly on Windows with the standalone installer, while the rest of the stack still uses **Linux container images**. The Docker services will not run as native Windows containers.
 
-Use one of these approaches:
-
-- Docker with a Linux-container backend / WSL2, where available.
-- A small Linux VM on the Windows Server host.
-- A plain Linux server, if Windows container support becomes a blocker.
-
-Inside the Linux-container environment, the stack expects paths like `/srv/media-stack`.
+Use Docker with a Linux-container backend / WSL2, or a small Linux VM on the Windows Server host. Configure Docker bind mounts to use the same Windows media root that Jellyfin uses directly.
 
 ## What is NFS, and why this fork does not use it?
 
@@ -40,21 +34,59 @@ Cons:
 - Permissions can be painful.
 - Usually unnecessary for a single-server setup.
 
-This fork uses local bind-mounted storage rooted at `/srv/media-stack`.
+This fork uses local bind-mounted storage rooted at a Windows folder such as `D:\MediaStack`.
 
 ## Directory layout
 
-Create these directories before first start:
+Create this shared directory layout before first start:
 
-```bash
-sudo mkdir -p \
-  /srv/media-stack/config/{traefik/letsencrypt,gluetun,qbittorrent,sonarr,radarr,prowlarr,unpackerr,jellyfin,jellyfin-cache,jellyseerr} \
-  /srv/media-stack/data/{media,torrents}
-
-sudo chown -R 1000:1000 /srv/media-stack
+```powershell
+New-Item -ItemType Directory -Force `
+  D:\MediaStack\config\traefik\letsencrypt, `
+  D:\MediaStack\config\gluetun, `
+  D:\MediaStack\config\qbittorrent, `
+  D:\MediaStack\config\sonarr, `
+  D:\MediaStack\config\radarr, `
+  D:\MediaStack\config\prowlarr, `
+  D:\MediaStack\config\unpackerr, `
+  D:\MediaStack\config\jellyseerr, `
+  D:\MediaStack\data\media, `
+  D:\MediaStack\data\torrents
 ```
 
-If your Docker Linux backend runs as a different user, adjust `PUID`, `PGID`, and ownership accordingly.
+Set `MEDIA_STACK_ROOT=D:/MediaStack` in `.env`. Docker uses forward slashes for the bind-mount root; Jellyfin for Windows should use the normal Windows path, for example `D:\MediaStack\data\media`.
+
+## Jellyfin for Windows
+
+Install Jellyfin directly on Windows instead of running it in Docker.
+
+Current official Windows standalone installer URL:
+
+<https://repo.jellyfin.org/files/server/windows/latest-stable/amd64/jellyfin_10.11.10_windows-x64.exe>
+
+After installation:
+
+1. Start Jellyfin and complete the first-run wizard.
+2. Add media libraries that point at `D:\MediaStack\data\media` or subfolders inside it.
+3. Make Jellyfin reachable on the LAN, normally at `http://<windows-host-lan-ip>:8096`.
+4. In Jellyfin Dashboard → Networking, keep the HTTP port at `8096` unless you intentionally change it.
+5. Allow inbound TCP `8096` through Windows Firewall for your LAN/private network profile.
+
+Jellyfin is not routed publicly through Traefik in this repo. For remote Jellyfin access later, prefer a private-access method such as Tailscale, WireGuard, or another VPN rather than exposing Jellyfin publicly by default.
+
+## Jellyseerr setup with external Jellyfin
+
+Jellyseerr remains a Docker service. It does not depend on a Jellyfin container; configure the Windows-host Jellyfin server in the Jellyseerr web UI after first startup.
+
+Recommended Jellyseerr connection value:
+
+```text
+http://<windows-host-lan-ip>:8096
+```
+
+Do not use `localhost` from inside the Jellyseerr container, because that refers to the container itself, not the Windows host. If the host LAN IP changes, update the Jellyfin server URL in Jellyseerr settings.
+
+If Jellyseerr cannot connect, first confirm Jellyfin is healthy from another LAN device at `http://<windows-host-lan-ip>:8096`, then check Windows Firewall/private-network rules for inbound TCP `8096`.
 
 ## Public/private access model
 
@@ -64,21 +96,20 @@ Public through Traefik/Cloudflare:
 
 Not publicly exposed by default:
 
-- Jellyfin
+- Jellyfin for Windows (`http://<windows-host-lan-ip>:8096`, LAN only)
 - qBittorrent
 - Sonarr
 - Radarr
 - Prowlarr
 
-Local-only bindings:
+Local-only Docker bindings:
 
 - qBittorrent: `http://127.0.0.1:8088`
 - Sonarr: `http://127.0.0.1:8989`
 - Radarr: `http://127.0.0.1:7878`
 - Prowlarr: `http://127.0.0.1:9696`
-- Jellyfin: `http://127.0.0.1:8096`
 
-For LAN access, change the relevant port binding from `127.0.0.1:PORT:PORT` to `PORT:PORT`. For safer remote admin access later, prefer Tailscale, WireGuard, SSH tunneling, or another private-access method instead of public Traefik routes.
+For safer remote admin access later, prefer Tailscale, WireGuard, SSH tunneling, or another private-access method instead of public Traefik routes.
 
 ## Required top-level variables
 
@@ -94,7 +125,7 @@ Required values:
 | --- | --- |
 | `DOMAIN` | Your Cloudflare-managed domain, e.g. `example.com` |
 | `EMAIL_ADDRESS` | Email used by Let's Encrypt |
-| `MEDIA_STACK_ROOT` | Local stack root; default `/srv/media-stack` |
+| `MEDIA_STACK_ROOT` | Shared Windows stack root for Docker bind mounts; default example `D:/MediaStack` |
 
 ## Environment files
 
@@ -106,7 +137,7 @@ To initialize local env files from templates:
 for f in env/*.env.example; do cp "$f" "${f%.example}"; done
 ```
 
-All env files use Docker-compatible `KEY=value` syntax.
+All env files use Docker-compatible `KEY=value` syntax. `env/jellyseerr.env` is Jellyseerr-only; Jellyfin is configured in the Windows app and in the Jellyseerr web UI, not via Docker environment variables.
 
 ## Required secret files
 
@@ -158,7 +189,8 @@ docker compose config
 Expected defaults:
 
 - No `NFS_SERVER` or `NFS_VOLUME` interpolation required.
-- `jellyfin-compose.yml` included.
+- `jellyseerr-compose.yml` included.
+- No Docker `jellyfin` service.
 - `plex-compose.yml` disabled.
 - Only Jellyseerr has public Traefik router labels.
 
@@ -166,14 +198,16 @@ Expected defaults:
 
 Recommended first deployment sequence:
 
-1. Validate compose syntax.
-2. Start Traefik and confirm certificates can be issued.
-3. Configure VPN provider and start Gluetun.
-4. Start qBittorrent.
-5. Start Sonarr/Radarr/Prowlarr.
-6. Start Jellyfin and Jellyseerr.
+1. Create `D:\MediaStack` directories and configure `.env` with `MEDIA_STACK_ROOT=D:/MediaStack`.
+2. Install and configure Jellyfin for Windows; confirm `http://<windows-host-lan-ip>:8096` works from the LAN.
+3. Validate Docker Compose syntax.
+4. Start Traefik and confirm certificates can be issued.
+5. Configure VPN provider and start Gluetun.
+6. Start qBittorrent.
+7. Start Sonarr/Radarr/Prowlarr.
+8. Start Jellyseerr and connect it to `http://<windows-host-lan-ip>:8096` in the web UI.
 
-Example full start after configuration:
+Example full Docker start after configuration:
 
 ```bash
 docker compose up -d
@@ -184,4 +218,4 @@ docker compose up -d
 - Choose the VPN provider and finalize Gluetun provider-specific settings.
 - Confirm qBittorrent Web UI credentials and keep `env/bittorrent.env` in sync.
 - Add Radarr/Sonarr API keys to local secret files after initial app setup.
-- Decide later whether Jellyfin should be LAN-accessible or private-remote-accessible.
+- Keep the Windows host LAN IP stable with a DHCP reservation or static IP so Jellyseerr can reliably reach Jellyfin.

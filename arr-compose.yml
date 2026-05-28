@@ -120,32 +120,32 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/data
+      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/data
 
   sonarr: # Sonarr app data.
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/config/sonarr
+      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/sonarr
 
   radarr: # Radarr app data.
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/config/radarr
+      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/radarr
 
   prowlarr: # Prowlarr app data.
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/config/prowlarr
+      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/prowlarr
 
   unpackerr: # Unpackerr app data.
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/config/unpackerr
+      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/unpackerr

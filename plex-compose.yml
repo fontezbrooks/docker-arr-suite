@@ -56,18 +56,18 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/data/media
+      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/data/media
 
   overseerr: # Overseerr app data.
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/config/overseerr
+      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/overseerr
 
   plex: # Plex app data.
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/config/plex
+      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/plex

@@ -56,11 +56,11 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/data/torrents
+      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/data/torrents
 
   bittorrent: # qBittorrent app data.
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/config/qbittorrent
+      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/qbittorrent

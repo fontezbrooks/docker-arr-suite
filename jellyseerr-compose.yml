@@ -1,0 +1,38 @@
+---
+
+services:
+  jellyseerr:
+    image: fallenbagel/jellyseerr:latest
+    container_name: jellyseerr
+    restart: always
+    env_file: ./env/jellyseerr.env
+    volumes:
+      - jellyseerr:/app/config
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.jellyseerr.rule=Host(`jellyseerr.${DOMAIN}`)
+      - traefik.http.routers.jellyseerr.entrypoints=websecure
+      - traefik.http.services.jellyseerr.loadbalancer.server.port=5055
+    healthcheck:
+      test: wget http://localhost:5055/api/v1/status -qO /dev/null || exit 1
+      interval: 10s
+      timeout: 3s
+      start_period: 60s
+    depends_on:
+      traefik:
+        condition: service_healthy
+        restart: true
+
+networks:
+  default:
+    name: media_network
+    driver: bridge
+    attachable: true
+
+volumes:
+  jellyseerr: # Jellyseerr app data.
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/jellyseerr

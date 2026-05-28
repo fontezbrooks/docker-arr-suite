@@ -94,7 +94,7 @@ include:
   - arr-compose.yml
   # Plex is intentionally disabled for this fork.
   # - plex-compose.yml
-  - jellyfin-compose.yml
+  - jellyseerr-compose.yml
 
 networks:
   default:
@@ -108,11 +108,11 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/config/traefik/letsencrypt
+      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/traefik/letsencrypt
 
   gluetun: # Gluetun app data.
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: ${MEDIA_STACK_ROOT:-/srv/media-stack}/config/gluetun
+      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/gluetun
