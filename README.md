@@ -2,6 +2,8 @@
 
 Docker Compose stack for a private media server with remote media requests.
 
+**Setting this up for the first time? Follow [`SETUP.md`](SETUP.md)** — an ordered, verifiable deployment runbook. This README is the reference material: what each service is, which variables exist, and what is publicly exposed.
+
 This fork is configured for:
 
 - **Jellyfin for Windows** as the media server, installed with the official standalone `.exe` installer.
@@ -42,7 +44,6 @@ Create this shared directory layout before first start:
 
 ```powershell
 New-Item -ItemType Directory -Force `
-  D:\MediaStack\config\traefik\letsencrypt, `
   D:\MediaStack\config\gluetun, `
   D:\MediaStack\config\qbittorrent, `
   D:\MediaStack\config\sonarr, `
@@ -53,6 +54,8 @@ New-Item -ItemType Directory -Force `
   D:\MediaStack\data\media, `
   D:\MediaStack\data\torrents
 ```
+
+Traefik's Let's Encrypt store is a Docker-managed volume, not a host folder. Traefik requires `acme.json` at mode `0600`, which Windows-drive bind mounts cannot provide reliably.
 
 Set `MEDIA_STACK_ROOT=D:/MediaStack` in `.env`. Docker uses forward slashes for the bind-mount root; Jellyfin for Windows should use the normal Windows path, for example `D:\MediaStack\data\media`.
 
@@ -78,13 +81,19 @@ Jellyfin is not routed publicly through Traefik in this repo. For remote Jellyfi
 
 Jellyseerr remains a Docker service. It does not depend on a Jellyfin container; configure the Windows-host Jellyfin server in the Jellyseerr web UI after first startup.
 
-Recommended Jellyseerr connection value:
+Recommended Jellyseerr connection value on Docker Desktop / WSL2:
+
+```text
+http://host.docker.internal:8096
+```
+
+This resolves to the Windows host from inside the container and survives host IP changes, so no DHCP reservation is required. On a plain Linux Docker engine that name does not exist; use the host LAN IP instead:
 
 ```text
 http://<windows-host-lan-ip>:8096
 ```
 
-Do not use `localhost` from inside the Jellyseerr container, because that refers to the container itself, not the Windows host. If the host LAN IP changes, update the Jellyfin server URL in Jellyseerr settings.
+Do not use `localhost` from inside the Jellyseerr container, because that refers to the container itself, not the Windows host. If you use the LAN IP and it changes, update the Jellyfin server URL in Jellyseerr settings.
 
 If Jellyseerr cannot connect, first confirm Jellyfin is healthy from another LAN device at `http://<windows-host-lan-ip>:8096`, then check Windows Firewall/private-network rules for inbound TCP `8096`.
 
@@ -108,6 +117,7 @@ Local-only Docker bindings:
 - Sonarr: `http://127.0.0.1:8989`
 - Radarr: `http://127.0.0.1:7878`
 - Prowlarr: `http://127.0.0.1:9696`
+- Jellyseerr: `http://127.0.0.1:5055` (first-run setup before public DNS/TLS is ready)
 
 For safer remote admin access later, prefer Tailscale, WireGuard, SSH tunneling, or another private-access method instead of public Traefik routes.
 
@@ -151,8 +161,6 @@ Create these files locally:
 | `secrets/cloudflare-email.secret` | Cloudflare account email |
 | `secrets/openvpn_user.secret` | VPN/OpenVPN username, after choosing a provider |
 | `secrets/openvpn_password.secret` | VPN/OpenVPN password, after choosing a provider |
-| `secrets/bittorrent-user.secret` | qBittorrent Web UI username reference |
-| `secrets/bittorrent-password.secret` | qBittorrent Web UI password reference |
 | `secrets/radarr-api.secret` | Radarr API key for Unpackerr |
 | `secrets/sonarr-api.secret` | Sonarr API key for Unpackerr |
 
@@ -171,6 +179,43 @@ The previous config assumed Private Internet Access. This fork leaves provider s
 - port-forwarding settings, if your provider supports them
 
 See the Gluetun wiki for provider-specific settings: <https://github.com/qdm12/gluetun-wiki>
+
+## Shared media paths
+
+Every container mounts `${MEDIA_STACK_ROOT}/data` at `/data`, so qBittorrent, Sonarr, Radarr, and Unpackerr all see identical paths. This is what makes hardlinks and atomic moves work instead of slow full copies.
+
+In the qBittorrent Web UI, set the default save path to:
+
+```text
+/data/torrents
+```
+
+Do not point qBittorrent at `/data` directly, and do not give any service a different mount root, or *arr imports will fail with "file not found".
+
+Inside containers the layout is `/data/media/movies`, `/data/media/tv`, and `/data/torrents`. Jellyfin runs natively on Windows and uses the host paths under `D:\MediaStack\data\media` instead.
+
+## Port forwarding
+
+`bittorrent_port_forwarder` is disabled by default behind a Compose profile, because it crash-loops until a port-forwarding-capable VPN provider is configured. Enable it only after Gluetun is working:
+
+```bash
+docker compose --profile portforward up -d
+```
+
+Its credentials come from `QBT_USERNAME` / `QBT_PASSWORD` in `env/bittorrent.env`. The image does not read Docker secret files.
+
+## Image updates
+
+Infrastructure images are pinned to major versions (`traefik:v3`, `qmcgaw/gluetun:v3`, `containrrr/watchtower:1.7.1`, `golift/unpackerr:0.14`) so an unattended update cannot break Traefik CLI flags or the Gluetun environment contract.
+
+Watchtower runs with `WATCHTOWER_LABEL_ENABLE=true`, so it only updates containers labelled `com.centurylinklabs.watchtower.enable=true`. Only Jellyseerr carries that label, because it is the one publicly reachable service and should receive upstream patches.
+
+Update everything else deliberately:
+
+```bash
+docker compose pull
+docker compose up -d
+```
 
 ## Validate configuration
 
@@ -205,7 +250,8 @@ Recommended first deployment sequence:
 5. Configure VPN provider and start Gluetun.
 6. Start qBittorrent.
 7. Start Sonarr/Radarr/Prowlarr.
-8. Start Jellyseerr and connect it to `http://<windows-host-lan-ip>:8096` in the web UI.
+8. Start Jellyseerr, open `http://127.0.0.1:5055`, and connect it to the Windows Jellyfin URL in the web UI.
+9. Optionally enable port forwarding with `docker compose --profile portforward up -d`.
 
 Example full Docker start after configuration:
 
@@ -218,4 +264,5 @@ docker compose up -d
 - Choose the VPN provider and finalize Gluetun provider-specific settings.
 - Confirm qBittorrent Web UI credentials and keep `env/bittorrent.env` in sync.
 - Add Radarr/Sonarr API keys to local secret files after initial app setup.
+- Consider pinning the LinuxServer.io images to explicit release tags; they only publish `latest` and full version tags, so no major-version tag is available.
 - Keep the Windows host LAN IP stable with a DHCP reservation or static IP so Jellyseerr can reliably reach Jellyfin.
