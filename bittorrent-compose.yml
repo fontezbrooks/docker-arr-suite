@@ -1,22 +1,25 @@
 ---
 
-secrets:
-  bittorrent-user:
-    file: ./secrets/bittorrent-user.secret
-  bittorrent-password:
-    file: ./secrets/bittorrent-password.secret
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
 
 services:
   bittorrent:
     # See more: https://docs.linuxserver.io/images/docker-qbittorrent
+    # Mounts the same /data tree as the *arr apps. Set the qBittorrent
+    # default save path to /data/torrents in the Web UI.
     image: lscr.io/linuxserver/qbittorrent:latest
     container_name: bittorrent
     restart: always
+    logging: *default-logging
     network_mode: service:gluetun
     env_file: ./env/bittorrent.env
     volumes:
-      - bittorrent:/config
-      - torrent:/media
+      - ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/qbittorrent:/config
+      - ${MEDIA_STACK_ROOT:-D:/MediaStack}/data:/data
     healthcheck:
       test: curl -f http://localhost:8088 || exit 1
       interval: 10s
@@ -31,13 +34,17 @@ services:
 
   bittorrent_port_forwarder:
     # See more: https://github.com/mjmeli/qbittorrent-port-forward-gluetun-server
-    # Configure only after choosing a VPN provider that supports port forwarding.
+    # Disabled by default. Enable only after choosing a VPN provider that
+    # supports port forwarding, then start it with:
+    #   docker compose --profile portforward up -d
+    # This image reads QBT_USERNAME/QBT_PASSWORD from the environment, so the
+    # credentials live in env/bittorrent.env, not in secrets/.
     image: mjmeli/qbittorrent-port-forward-gluetun-server
     container_name: bittorrent_port_forwarder
     restart: always
-    secrets:
-      - bittorrent-user
-      - bittorrent-password
+    logging: *default-logging
+    profiles:
+      - portforward
     env_file: ./env/bittorrent.env
     depends_on:
       bittorrent:
@@ -49,18 +56,3 @@ networks:
     name: media_network
     driver: bridge
     attachable: true
-
-volumes:
-  torrent: # Torrent downloads.
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/data/torrents
-
-  bittorrent: # qBittorrent app data.
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/qbittorrent

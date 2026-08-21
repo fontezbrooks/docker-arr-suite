@@ -1,38 +1,39 @@
 ---
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
 services:
   jellyseerr:
+    # The only publicly routed service. Kept on :latest and label-gated for
+    # Watchtower so the public attack surface receives upstream patches.
     image: fallenbagel/jellyseerr:latest
     container_name: jellyseerr
     restart: always
+    logging: *default-logging
     env_file: ./env/jellyseerr.env
+    # Local binding so first-run setup works before public DNS/TLS is ready.
+    ports:
+      - "127.0.0.1:5055:5055"
     volumes:
-      - jellyseerr:/app/config
+      - ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/jellyseerr:/app/config
     labels:
       - traefik.enable=true
       - traefik.http.routers.jellyseerr.rule=Host(`jellyseerr.${DOMAIN}`)
       - traefik.http.routers.jellyseerr.entrypoints=websecure
       - traefik.http.services.jellyseerr.loadbalancer.server.port=5055
+      - com.centurylinklabs.watchtower.enable=true
     healthcheck:
       test: wget http://localhost:5055/api/v1/status -qO /dev/null || exit 1
       interval: 10s
       timeout: 3s
       start_period: 60s
-    depends_on:
-      traefik:
-        condition: service_healthy
-        restart: true
 
 networks:
   default:
     name: media_network
     driver: bridge
     attachable: true
-
-volumes:
-  jellyseerr: # Jellyseerr app data.
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/jellyseerr

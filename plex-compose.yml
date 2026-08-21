@@ -4,15 +4,22 @@ secrets:
   plex-claim:
     file: ./secrets/plex-claim.secret
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
 services:
   overseerr:
     # Plex/Overseerr is disabled by default in docker-compose.yml.
-    image: sctx/overseerr:latest
+    image: sctx/overseerr:1.34.0
     container_name: overseerr
     restart: always
+    logging: *default-logging
     env_file: ./env/plex.env
     volumes:
-      - overseerr:/app/config
+      - ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/overseerr:/app/config
     healthcheck:
       test: wget http://localhost:5055/api/v1/status -qO /dev/null || exit 1
       interval: 10s
@@ -30,12 +37,13 @@ services:
     image: lscr.io/linuxserver/plex:latest
     container_name: plex
     restart: always
+    logging: *default-logging
     secrets:
       - plex-claim
     env_file: ./env/plex.env
     volumes:
-      - plex:/config
-      - media:/media
+      - ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/plex:/config
+      - ${MEDIA_STACK_ROOT:-D:/MediaStack}/data:/data
     healthcheck:
       test: curl -f http://localhost:32400/identity || exit 1
       interval: 10s
@@ -49,25 +57,3 @@ networks:
     name: media_network
     driver: bridge
     attachable: true
-
-volumes:
-  media: # Media library.
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/data/media
-
-  overseerr: # Overseerr app data.
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/overseerr
-
-  plex: # Plex app data.
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/plex
