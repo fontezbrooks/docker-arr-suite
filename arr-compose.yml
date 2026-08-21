@@ -6,17 +6,30 @@ secrets:
   sonarr-api:
     file: ./secrets/sonarr-api.secret
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+# Every service mounts the same ${MEDIA_STACK_ROOT}/data tree at /data so that
+# qBittorrent, Sonarr, Radarr, and Unpackerr all report identical paths.
+# Without this, imports fail and hardlinks/atomic moves degrade to slow copies.
+x-data-volume: &data-volume
+  ${MEDIA_STACK_ROOT:-D:/MediaStack}/data:/data
+
 services:
   sonarr:
     # See more: https://docs.linuxserver.io/images/docker-sonarr
     image: lscr.io/linuxserver/sonarr:latest
     container_name: sonarr
     restart: always
+    logging: *default-logging
     network_mode: service:gluetun
     env_file: ./env/arr.env
     volumes:
-      - sonarr:/config
-      - data:/media
+      - ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/sonarr:/config
+      - *data-volume
     healthcheck:
       test: curl -f http://localhost:8989/ping || exit 1
       interval: 10s
@@ -28,20 +41,18 @@ services:
       gluetun:
         condition: service_healthy
         restart: true
-      bittorrent:
-        condition: service_healthy
-        restart: true
 
   radarr:
     # See more: https://docs.linuxserver.io/images/docker-radarr
     image: lscr.io/linuxserver/radarr:latest
     container_name: radarr
     restart: always
+    logging: *default-logging
     network_mode: service:gluetun
     env_file: ./env/arr.env
     volumes:
-      - radarr:/config
-      - data:/media
+      - ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/radarr:/config
+      - *data-volume
     healthcheck:
       test: curl -f http://localhost:7878/ping || exit 1
       interval: 10s
@@ -53,20 +64,18 @@ services:
       gluetun:
         condition: service_healthy
         restart: true
-      bittorrent:
-        condition: service_healthy
-        restart: true
 
   prowlarr:
     # See more: https://docs.linuxserver.io/images/docker-prowlarr
+    # Prowlarr feeds indexers to Sonarr/Radarr, so it must not depend on them.
     image: lscr.io/linuxserver/prowlarr:latest
     container_name: prowlarr
     restart: always
+    logging: *default-logging
     network_mode: service:gluetun
     env_file: ./env/arr.env
     volumes:
-      - prowlarr:/config
-      - data:/media
+      - ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/prowlarr:/config
     healthcheck:
       test: curl -f http://localhost:9696/ping || exit 1
       interval: 10s
@@ -78,33 +87,24 @@ services:
       gluetun:
         condition: service_healthy
         restart: true
-      bittorrent:
-        condition: service_healthy
-        restart: true
-      sonarr:
-        condition: service_healthy
-        restart: true
-      radarr:
-        condition: service_healthy
-        restart: true
 
   unpackerr:
     # See more: https://unpackerr.zip/docs/install/compose
-    image: golift/unpackerr
+    # Reaches Sonarr/Radarr through the Gluetun network namespace and retries
+    # on its own, so it only needs Gluetun to be up.
+    image: golift/unpackerr:0.14
     container_name: unpackerr
     restart: always
+    logging: *default-logging
     secrets:
       - radarr-api
       - sonarr-api
     env_file: ./env/arr.env
     volumes:
-      - data:/media
-      - unpackerr:/config
+      - *data-volume
+      - ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/unpackerr:/config
     depends_on:
-      sonarr:
-        condition: service_healthy
-        restart: true
-      radarr:
+      gluetun:
         condition: service_healthy
         restart: true
 
@@ -113,39 +113,3 @@ networks:
     name: media_network
     driver: bridge
     attachable: true
-
-volumes:
-  data: # Shared media/downloads path for Sonarr, Radarr, Prowlarr, and Unpackerr.
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/data
-
-  sonarr: # Sonarr app data.
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/sonarr
-
-  radarr: # Radarr app data.
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/radarr
-
-  prowlarr: # Prowlarr app data.
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/prowlarr
-
-  unpackerr: # Unpackerr app data.
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/unpackerr

@@ -10,22 +10,29 @@ secrets:
   openvpn_password:
     file: ./secrets/openvpn_password.secret
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
 services:
   traefik:
-    image: traefik
+    image: traefik:v3
     container_name: traefik
     restart: always
+    logging: *default-logging
     command:
       - --log.level=INFO
+      - --ping=true
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
       - --api.dashboard=false
-      - --serversTransport.insecureSkipVerify=true
       # Set up LetsEncrypt certificate resolver with Cloudflare DNS challenge.
       - --certificatesresolvers.letsencrypt.acme.dnschallenge=true
       - --certificatesresolvers.letsencrypt.acme.dnschallenge.provider=cloudflare
-      - --certificatesResolvers.letsencrypt.acme.dnschallenge.resolvers=1.1.1.1:53,1.0.0.1:53
-      - --certificatesResolvers.letsencrypt.acme.dnschallenge.delayBeforeCheck=20
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge.resolvers=1.1.1.1:53,1.0.0.1:53
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge.propagation.delayBeforeChecks=20s
       - --certificatesresolvers.letsencrypt.acme.email=${EMAIL_ADDRESS}
       - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
       # HTTP -> HTTPS redirect.
@@ -43,13 +50,15 @@ services:
       - cloudflare-email
     env_file: ./env/traefik.env
     ports:
-      - 80:80
-      - 443:443
+      - "80:80"
+      - "443:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Docker-managed volume: Traefik requires acme.json at mode 0600, which
+      # host bind mounts (especially Windows drives) cannot reliably provide.
       - letsencrypt:/letsencrypt
     healthcheck:
-      test: netstat -ptan | grep -E "443.*LISTEN" || exit 1
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
       interval: 10s
       timeout: 3s
       start_period: 60s
@@ -59,9 +68,10 @@ services:
     # This stack uses Linux containers. On Windows Server, run Docker with a
     # Linux backend such as WSL2 or a Linux VM; native Windows containers will
     # not run these images.
-    image: qmcgaw/gluetun
+    image: qmcgaw/gluetun:v3
     container_name: gluetun
     restart: always
+    logging: *default-logging
     cap_add:
       - NET_ADMIN
     devices:
@@ -74,17 +84,23 @@ services:
     # only. Use SSH tunneling, a private VPN, or change these bindings if you
     # later want LAN access.
     ports:
-      - 127.0.0.1:8088:8088 # qBittorrent
-      - 127.0.0.1:8989:8989 # Sonarr
-      - 127.0.0.1:7878:7878 # Radarr
-      - 127.0.0.1:9696:9696 # Prowlarr
+      - "127.0.0.1:8088:8088"  # qBittorrent
+      - "127.0.0.1:8989:8989"  # Sonarr
+      - "127.0.0.1:7878:7878"  # Radarr
+      - "127.0.0.1:9696:9696"  # Prowlarr
     volumes:
-      - gluetun:/gluetun
+      - ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/gluetun:/gluetun
 
   watchtower:
     # See more: https://github.com/containrrr/watchtower
-    image: containrrr/watchtower
+    # Label-gated: only containers carrying
+    # com.centurylinklabs.watchtower.enable=true are auto-updated. Everything
+    # else is updated manually with `docker compose pull && docker compose up -d`
+    # so pinned infrastructure images never change unattended.
+    image: containrrr/watchtower:1.7.1
     container_name: watchtower
+    restart: always
+    logging: *default-logging
     env_file: ./env/watchtower.env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -103,16 +119,4 @@ networks:
     attachable: true
 
 volumes:
-  letsencrypt: # Traefik Lets Encrypt certs.
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/traefik/letsencrypt
-
-  gluetun: # Gluetun app data.
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${MEDIA_STACK_ROOT:-D:/MediaStack}/config/gluetun
+  letsencrypt:  # Traefik Lets Encrypt certs (Docker-managed, mode-sensitive).
